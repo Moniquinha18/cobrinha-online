@@ -1,0 +1,940 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="h-full w-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cobrinha Online - Multiplayer em Nuvem</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Plus Jakarta+Sans', sans-serif; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #020617; }
+    ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #334155; }
+    .glass-card {
+      background: rgba(15, 23, 42, 0.75);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.4);
+    }
+    .btn-glow {
+      box-shadow: 0 0 25px -5px rgba(16, 185, 129, 0.4);
+    }
+  </style>
+</head>
+<body class="h-full w-full relative bg-slate-950 text-slate-100 overflow-hidden">
+
+  <canvas id="gameCanvas" class="absolute inset-0 w-full h-full block cursor-crosshair z-0"></canvas>
+
+  <!-- HUD da Partida -->
+  <div id="gameHUD" class="absolute top-5 left-5 z-10 flex flex-col gap-3.5 pointer-events-none hidden">
+    <div class="glass-card rounded-2xl p-4.5 flex flex-col gap-1.5 w-56 pointer-events-auto transition-transform hover:scale-[1.02]">
+      <div class="flex items-center justify-between">
+        <span class="text-[10px] font-extrabold uppercase tracking-wider text-emerald-400">Placar ao Vivo</span>
+        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+      </div>
+      <div class="flex justify-between items-end">
+        <span class="text-3xl font-extrabold text-white tracking-tight" id="hudScore">0</span>
+        <span class="text-xs font-medium text-slate-400 mb-1">pontos</span>
+      </div>
+      <div class="flex justify-between items-center text-xs text-slate-400 mt-1 pt-2 border-t border-slate-800/80">
+        <span>Comprimento:</span>
+        <span class="font-bold text-white" id="hudLength">10</span>
+      </div>
+    </div>
+
+    <div class="glass-card rounded-2xl p-4.5 w-56 pointer-events-auto">
+      <span class="text-[10px] font-extrabold uppercase tracking-wider text-cyan-400 mb-2.5 block">Top Jogadores (Nuvem)</span>
+      <div id="leaderboardList" class="flex flex-col gap-2 text-xs font-medium">
+        <!-- Preenchido via Firebase -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Minimapa Radar Circular -->
+  <div id="minimapContainer" class="absolute top-5 right-5 z-10 pointer-events-none hidden">
+    <div class="glass-card rounded-full p-1.5 shadow-2xl">
+      <canvas id="minimapCanvas" width="130" height="130" class="rounded-full block ring-1 ring-slate-700/50"></canvas>
+    </div>
+  </div>
+
+  <!-- Guia de Controles Rápido -->
+  <div id="controlsHint" class="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 glass-card px-5 py-2.5 rounded-2xl text-xs text-slate-300 pointer-events-none hidden md:flex items-center gap-2 shadow-xl">
+    <span>💡</span>
+    <span>Movimentação: <strong class="text-emerald-400">Setas</strong> ou <strong class="text-cyan-400">Mouse</strong> | Segure <strong class="text-amber-400">Espaço</strong> para TURBO ⚡</span>
+  </div>
+
+  <!-- Botão Convidar Amigo -->
+  <div class="absolute top-24 right-5 z-10 pointer-events-auto" id="btnInviteContainer">
+    <button onclick="openInviteModal()" class="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-extrabold px-4 py-2.5 rounded-xl shadow-lg text-xs flex items-center gap-2 transition-all active:scale-95 ring-1 ring-cyan-400/30">
+      <span>👥</span> Link para Amigo (Nuvem)
+    </button>
+  </div>
+
+  <!-- Controles Mobile -->
+  <div id="mobileControls" class="absolute bottom-6 left-6 z-10 flex items-center gap-3 select-none pointer-events-auto">
+    <button id="btnBoost" class="w-16 h-16 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 text-slate-950 font-extrabold shadow-xl flex flex-col items-center justify-center border-2 border-amber-300 active:scale-95 transition">
+      <span class="text-sm leading-none">⚡</span>
+      <span class="text-[9px] font-extrabold leading-tight mt-0.5 tracking-wider">TURBO</span>
+    </button>
+  </div>
+
+  <!-- Botão de Som -->
+  <div class="absolute bottom-6 right-6 z-10 pointer-events-auto">
+    <button id="btnAudioToggle" onclick="toggleAudio()" class="w-12 h-12 rounded-full glass-card hover:bg-slate-800 text-white flex items-center justify-center shadow-xl transition active:scale-95 text-base" title="Ativar/Desativar Som">
+      🎵
+    </button>
+  </div>
+
+  <!-- Menu Inicial / Modal de Personalização -->
+  <div id="menuModal" class="absolute inset-0 z-20 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-xl">
+    <div class="glass-card rounded-3xl p-6 md:p-8 max-w-md w-full shadow-2xl flex flex-col gap-5 max-h-[90vh] overflow-y-auto border border-slate-700/50">
+      <div class="text-center">
+        <h1 class="text-3xl font-extrabold bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400 bg-clip-text text-transparent">Cobrinha Cloud</h1>
+        <p class="text-xs text-slate-400 mt-1 font-medium">Multiplayer Online em Tempo Real via Firebase Cloud</p>
+      </div>
+
+      <div class="flex flex-col gap-4">
+        <div>
+          <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Apelido da Cobra</label>
+          <input type="text" id="inputName" value="Cobra Master 🐍" maxlength="16"
+                 class="w-full bg-slate-900/90 border border-slate-700/80 rounded-xl px-4 py-3 text-sm font-semibold text-white focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition">
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Cor Principal</label>
+            <input type="color" id="inputColorPrimary" value="#10b981" 
+                   class="w-full h-10 bg-slate-900 border border-slate-700 rounded-xl cursor-pointer p-1.5">
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Cor Secundária</label>
+            <input type="color" id="inputColorSecondary" value="#06b6d4" 
+                   class="w-full h-10 bg-slate-900 border border-slate-700 rounded-xl cursor-pointer p-1.5">
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Paletas Rápidas</label>
+          <div class="grid grid-cols-7 gap-2">
+            <button type="button" onclick="setPalette('#10b981', '#06b6d4')" class="h-7 rounded-xl bg-emerald-500 border border-slate-700 hover:scale-105 shadow transition"></button>
+            <button type="button" onclick="setPalette('#ec4899', '#8b5cf6')" class="h-7 rounded-xl bg-pink-500 border border-slate-700 hover:scale-105 shadow transition"></button>
+            <button type="button" onclick="setPalette('#f59e0b', '#ef4444')" class="h-7 rounded-xl bg-amber-500 border border-slate-700 hover:scale-105 shadow transition"></button>
+            <button type="button" onclick="setPalette('#3b82f6', '#1d4ed8')" class="h-7 rounded-xl bg-blue-500 border border-slate-700 hover:scale-105 shadow transition"></button>
+            <button type="button" onclick="setPalette('#a855f7', '#6366f1')" class="h-7 rounded-xl bg-purple-500 border border-slate-700 hover:scale-105 shadow transition"></button>
+            <button type="button" onclick="setPalette('#e11d48', '#fb7185')" class="h-7 rounded-xl bg-rose-600 border border-slate-700 hover:scale-105 shadow transition"></button>
+            <button type="button" onclick="setPalette('#84cc16', '#22c55e')" class="h-7 rounded-xl bg-lime-500 border border-slate-700 hover:scale-105 shadow transition"></button>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Estampa do Corpo</label>
+          <select id="selectPattern" class="w-full bg-slate-900/90 border border-slate-700/80 rounded-xl px-3.5 py-3 text-xs font-semibold text-white focus:outline-none focus:border-emerald-500">
+            <option value="solid">Sólida Clássica</option>
+            <option value="stripes" selected>Listras Alternadas</option>
+            <option value="neon">Glow Neon Vibrante</option>
+            <option value="rainbow">Arco-Íris Mágico</option>
+          </select>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Olhos</label>
+            <select id="selectEyes" class="w-full bg-slate-900/90 border border-slate-700/80 rounded-xl px-3 py-3 text-xs font-semibold text-white focus:outline-none focus:border-emerald-500">
+              <option value="normal">Normal</option>
+              <option value="cute">Fofo Anime</option>
+              <option value="angry">Bravo</option>
+              <option value="star" selected>Estrelinhas ⭐</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Acessório</label>
+            <select id="selectHat" class="w-full bg-slate-900/90 border border-slate-700/80 rounded-xl px-3 py-3 text-xs font-semibold text-white focus:outline-none focus:border-emerald-500">
+              <option value="none">Nenhum</option>
+              <option value="crown">Coroa 👑</option>
+              <option value="hat">Chapéu 🎩</option>
+              <option value="glasses">Óculos 🕶️</option>
+              <option value="halo" selected>Auréola 😇</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <button onclick="onStartGame()" class="w-full py-4 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-extrabold rounded-2xl shadow-xl btn-glow transition transform active:scale-95 text-sm tracking-wide">
+        ENTRAR NA ARENA 🚀
+      </button>
+
+      <button onclick="openInviteModal()" class="w-full py-3 bg-slate-800/80 hover:bg-slate-700/80 text-cyan-400 font-bold text-xs rounded-2xl border border-slate-700 transition flex items-center justify-center gap-2">
+        <span>🔗</span> Copiar Link para seu Amigo Entrar
+      </button>
+    </div>
+  </div>
+
+  <!-- Modal Convite -->
+  <div id="inviteModal" class="absolute inset-0 z-40 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md hidden">
+    <div class="glass-card rounded-3xl p-6 max-w-md w-full text-center shadow-2xl flex flex-col gap-4 border border-slate-700">
+      <h3 class="text-2xl font-extrabold text-cyan-400">Convidar Amigo 🎮</h3>
+      <p class="text-xs text-slate-300 font-medium">
+        Copie este link abaixo e envie para seu amigo. Quando ele abrir, vocês vão entrar na mesma sala de jogo sincronizada!
+      </p>
+
+      <div class="bg-slate-950/80 p-3 rounded-xl border border-slate-800 flex items-center gap-2">
+        <input type="text" id="shareLinkInput" readonly class="w-full bg-transparent text-xs text-slate-400 focus:outline-none font-mono" value="">
+        <button onclick="copyShareLink()" class="px-3.5 py-2 bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-bold rounded-lg transition active:scale-95">
+          Copiar
+        </button>
+      </div>
+      <span id="copyFeedback" class="text-xs font-semibold text-emerald-400 hidden">Link copiado com sucesso!</span>
+
+      <button onclick="closeInviteModal()" class="w-full py-3 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-xl transition">
+        Fechar
+      </button>
+    </div>
+  </div>
+
+  <!-- Modal Game Over -->
+  <div id="gameOverModal" class="absolute inset-0 z-30 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md hidden">
+    <div class="glass-card rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl flex flex-col gap-5 border border-slate-700">
+      <h2 class="text-3xl font-extrabold text-red-400">Fim de Jogo! 💥</h2>
+      <p class="text-xs text-slate-300 font-medium">Sua cobra colidiu e foi eliminada da arena.</p>
+      
+      <div class="bg-slate-950/80 p-4 rounded-2xl border border-slate-800 flex justify-around">
+        <div>
+          <span class="block text-[10px] text-slate-400 uppercase font-extrabold tracking-wider">Pontuação</span>
+          <span class="text-2xl font-extrabold text-white mt-0.5 block" id="finalScore">0</span>
+        </div>
+        <div class="w-px bg-slate-800"></div>
+        <div>
+          <span class="block text-[10px] text-slate-400 uppercase font-extrabold tracking-wider">Comprimento</span>
+          <span class="text-2xl font-extrabold text-emerald-400 mt-0.5 block" id="finalLength">10</span>
+        </div>
+      </div>
+
+      <button onclick="resetGame()" class="w-full py-3.5 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-extrabold rounded-xl shadow-lg transition active:scale-95 mt-1 text-sm">
+        JOGAR NOVAMENTE 🔄
+      </button>
+    </div>
+  </div>
+
+  <script>
+    class AudioEngine {
+      constructor() {
+        this.ctx = null;
+        this.musicInterval = null;
+        this.musicPlaying = true;
+        this.chords = [
+          [261.63, 329.63, 392.00],
+          [220.00, 261.63, 329.63],
+          [174.61, 220.00, 261.63],
+          [196.00, 246.94, 293.66]
+        ];
+        this.chordIndex = 0;
+      }
+
+      init() {
+        if (!this.ctx) {
+          const AudioContext = window.AudioContext || window.webkitAudioContext;
+          if (AudioContext) this.ctx = new AudioContext();
+        }
+        if (this.ctx && this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
+        if (this.musicPlaying && !this.musicInterval) {
+          this.startCalmMusic();
+        }
+      }
+
+      toggleMusic() {
+        this.musicPlaying = !this.musicPlaying;
+        if (!this.musicPlaying && this.musicInterval) {
+          clearInterval(this.musicInterval);
+          this.musicInterval = null;
+        } else if (this.musicPlaying && this.ctx) {
+          this.startCalmMusic();
+        }
+        const btn = document.getElementById('btnAudioToggle');
+        if (btn) btn.textContent = this.musicPlaying ? '🎵' : '🔇';
+        return this.musicPlaying;
+      }
+
+      startCalmMusic() {
+        if (this.musicInterval) clearInterval(this.musicInterval);
+        this.musicInterval = setInterval(() => {
+          if (!this.musicPlaying || !this.ctx) return;
+          try {
+            const currentChord = this.chords[this.chordIndex];
+            this.chordIndex = (this.chordIndex + 1) % this.chords.length;
+
+            currentChord.forEach((freq, idx) => {
+              const osc = this.ctx.createOscillator();
+              const gain = this.ctx.createGain();
+              const filter = this.ctx.createBiquadFilter();
+
+              osc.type = idx === 0 ? 'sine' : 'triangle';
+              osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+              filter.type = 'lowpass';
+              filter.frequency.setValueAtTime(500, this.ctx.currentTime);
+
+              gain.gain.setValueAtTime(0.001, this.ctx.currentTime);
+              gain.gain.linearRampToValueAtTime(0.02, this.ctx.currentTime + 1.5);
+              gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + 5.0);
+
+              osc.connect(filter);
+              filter.connect(gain);
+              gain.connect(this.ctx.destination);
+
+              osc.start();
+              osc.stop(this.ctx.currentTime + 5.1);
+            });
+          } catch(e) {}
+        }, 4000);
+      }
+
+      playEat() {
+        if (!this.ctx) return;
+        try {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(587.33, this.ctx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(1174.66, this.ctx.currentTime + 0.12);
+          gain.gain.setValueAtTime(0.06, this.ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.12);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start();
+          osc.stop(this.ctx.currentTime + 0.12);
+        } catch(e) {}
+      }
+
+      playDeath() {
+        if (!this.ctx) return;
+        try {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(180, this.ctx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(35, this.ctx.currentTime + 0.6);
+          gain.gain.setValueAtTime(0.12, this.ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.6);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start();
+          osc.stop(this.ctx.currentTime + 0.6);
+        } catch(e) {}
+      }
+    }
+
+    const audioSynth = new AudioEngine();
+
+    window.toggleAudio = function() {
+      audioSynth.init();
+      audioSynth.toggleMusic();
+    };
+
+    window.setPalette = function(c1, c2) {
+      document.getElementById('inputColorPrimary').value = c1;
+      document.getElementById('inputColorSecondary').value = c2;
+    };
+
+    window.openInviteModal = function() {
+      const modal = document.getElementById('inviteModal');
+      const input = document.getElementById('shareLinkInput');
+      if (input) {
+        // Gera um link limpo da página principal sem parâmetros corrompidos de iframe
+        const cleanUrl = window.location.origin + window.location.pathname;
+        input.value = cleanUrl;
+      }
+      if (modal) modal.classList.remove('hidden');
+    };
+
+    window.closeInviteModal = function() {
+      const modal = document.getElementById('inviteModal');
+      if (modal) modal.classList.add('hidden');
+      const feedback = document.getElementById('copyFeedback');
+      if (feedback) feedback.classList.add('hidden');
+    };
+
+    window.copyShareLink = function() {
+      const input = document.getElementById('shareLinkInput');
+      if (input) {
+        input.select();
+        document.execCommand('copy');
+        const feedback = document.getElementById('copyFeedback');
+        if (feedback) {
+          feedback.classList.remove('hidden');
+          setTimeout(() => feedback.classList.add('hidden'), 2500);
+        }
+      }
+    };
+  </script>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, doc, setDoc, onSnapshot, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'cobrinha-online-app';
+    const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+      apiKey: "AIzaSyDummyKeyForOfflinePreviewMode999",
+      authDomain: "dummy-project.firebaseapp.com",
+      projectId: "dummy-project",
+      storageBucket: "dummy-project.appspot.com",
+      messagingSenderId: "123456789",
+      appId: "1:123456789:web:abcdef"
+    };
+
+    let app, db, auth;
+    let currentUser = null;
+    let remotePlayersData = {};
+
+    try {
+      app = initializeApp(firebaseConfig);
+      db = getFirestore(app);
+      auth = getAuth(app);
+    } catch(err) {
+      console.warn("Firebase init fallback:", err);
+    }
+
+    async function initAuth() {
+      try {
+        if (auth) {
+          if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+            await signInWithCustomToken(auth, __initial_auth_token);
+          } else {
+            await signInAnonymously(auth);
+          }
+          currentUser = auth.currentUser;
+        }
+      } catch (err) {
+        console.warn("Auth warning:", err);
+      }
+      if (!currentUser) {
+        currentUser = { uid: 'offline_user_' + Math.floor(Math.random() * 10000) };
+      }
+    }
+    initAuth();
+
+    const MAP_SIZE = 3600;
+    const SEGMENT_DISTANCE = 10;
+    const BASE_SPEED = 4.2;
+    const BOOST_SPEED = 7.8;
+
+    let canvas, ctx, minimapCanvas, minimapCtx;
+    let gameActive = false;
+    let localPlayer = null;
+    let snakes = [];
+    let foods = [];
+    
+    let keys = { ArrowLeft: false, ArrowRight: false, ArrowUp: false, ArrowDown: false, Space: false };
+    let mouse = { x: 0, y: 0, isDown: false, active: false };
+
+    class Food {
+      constructor(x, y, color, value = 1) {
+        this.x = x || Math.random() * MAP_SIZE;
+        this.y = y || Math.random() * MAP_SIZE;
+        this.color = color || `hsl(${Math.random() * 360}, 90%, 60%)`;
+        this.radius = 5 + Math.min(3, value);
+        this.value = value;
+      }
+
+      draw(context) {
+        context.save();
+        context.fillStyle = this.color;
+        context.shadowColor = this.color;
+        context.shadowBlur = 8;
+        context.beginPath();
+        context.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        context.fill();
+        context.restore();
+      }
+    }
+
+    class Snake {
+      constructor(config) {
+        this.id = config.id || (currentUser ? currentUser.uid : 'local');
+        this.name = config.name || 'Cobra';
+        this.x = config.x || MAP_SIZE / 2;
+        this.y = config.y || MAP_SIZE / 2;
+        this.angle = config.angle || Math.random() * Math.PI * 2;
+        this.targetAngle = this.angle;
+        this.speed = BASE_SPEED;
+        this.radius = 12;
+        this.score = config.score || 10;
+        this.segments = config.segments || [];
+        this.isBot = config.isBot || false;
+        this.isRemote = config.isRemote || false;
+        this.isAlive = true;
+        
+        this.colorPrimary = config.colorPrimary || '#10b981';
+        this.colorSecondary = config.colorSecondary || '#06b6d4';
+        this.pattern = config.pattern || 'stripes';
+        this.eyes = config.eyes || 'star';
+        this.hat = config.hat || 'halo';
+
+        if (this.segments.length === 0) {
+          for (let i = 0; i < this.score; i++) {
+            this.segments.push({
+              x: this.x - Math.cos(this.angle) * (i * SEGMENT_DISTANCE),
+              y: this.y - Math.sin(this.angle) * (i * SEGMENT_DISTANCE)
+            });
+          }
+        }
+      }
+
+      update() {
+        if (!this.isAlive || this.isRemote) return;
+
+        if (this.isBot) {
+          let nearestFood = null;
+          let minDist = 320;
+          for (let f of foods) {
+            const dist = Math.hypot(f.x - this.x, f.y - this.y);
+            if (dist < minDist) {
+              minDist = dist;
+              nearestFood = f;
+            }
+          }
+          if (nearestFood) {
+            this.targetAngle = Math.atan2(nearestFood.y - this.y, nearestFood.x - this.x);
+          } else if (Math.random() < 0.05) {
+            this.targetAngle += (Math.random() - 0.5) * 1.5;
+          }
+          if (this.x < 150) this.targetAngle = 0;
+          if (this.x > MAP_SIZE - 150) this.targetAngle = Math.PI;
+          if (this.y < 150) this.targetAngle = Math.PI / 2;
+          if (this.y > MAP_SIZE - 150) this.targetAngle = -Math.PI / 2;
+        }
+
+        let angleDiff = this.targetAngle - this.angle;
+        while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+        while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+        this.angle += angleDiff * 0.15;
+
+        let currentSpeed = this.speed;
+        if (!this.isBot && (keys.Space || mouse.isDown) && this.score > 15) {
+          currentSpeed = BOOST_SPEED;
+          if (Math.random() < 0.2 && this.segments.length > 15) {
+            const tail = this.segments[this.segments.length - 1];
+            foods.push(new Food(tail.x + (Math.random() - 0.5) * 10, tail.y + (Math.random() - 0.5) * 10, this.colorPrimary, 2));
+            this.score = Math.max(10, this.score - 0.1);
+          }
+        }
+
+        this.x += Math.cos(this.angle) * currentSpeed;
+        this.y += Math.sin(this.angle) * currentSpeed;
+
+        if (this.x < 0 || this.x > MAP_SIZE || this.y < 0 || this.y > MAP_SIZE) {
+          if (!this.isBot) {
+            triggerGameOver();
+          } else {
+            this.isAlive = false;
+          }
+          return;
+        }
+
+        const head = { x: this.x, y: this.y };
+        this.segments.unshift(head);
+        const targetSegCount = Math.floor(this.score);
+        while (this.segments.length > targetSegCount) {
+          this.segments.pop();
+        }
+      }
+
+      draw(context) {
+        if (!this.isAlive || this.segments.length === 0) return;
+        context.save();
+
+        for (let i = this.segments.length - 1; i >= 0; i--) {
+          const seg = this.segments[i];
+          const segRadius = Math.max(5, this.radius * (1 - (i / this.segments.length) * 0.2));
+
+          context.beginPath();
+          context.arc(seg.x, seg.y, segRadius, 0, Math.PI * 2);
+
+          if (this.pattern === 'stripes') {
+            context.fillStyle = (i % 2 === 0) ? this.colorPrimary : this.colorSecondary;
+          } else if (this.pattern === 'neon') {
+            context.fillStyle = this.colorPrimary;
+            context.shadowColor = this.colorSecondary;
+            context.shadowBlur = 12;
+          } else if (this.pattern === 'rainbow') {
+            const hue = (i * 12 + performance.now() * 0.2) % 360;
+            context.fillStyle = `hsl(${hue}, 90%, 55%)`;
+          } else {
+            context.fillStyle = this.colorPrimary;
+          }
+          context.fill();
+        }
+
+        const head = this.segments[0];
+        const eyeOffset = this.radius * 0.55;
+        const eyeRadius = Math.max(2, this.radius * 0.3);
+
+        const leftEyeX = head.x + Math.cos(this.angle - 0.6) * eyeOffset;
+        const leftEyeY = head.y + Math.sin(this.angle - 0.6) * eyeOffset;
+        const rightEyeX = head.x + Math.cos(this.angle + 0.6) * eyeOffset;
+        const rightEyeY = head.y + Math.sin(this.angle + 0.6) * eyeOffset;
+
+        context.fillStyle = '#ffffff';
+        context.shadowBlur = 0;
+        context.beginPath();
+        context.arc(leftEyeX, leftEyeY, eyeRadius, 0, Math.PI * 2);
+        context.arc(rightEyeX, rightEyeY, eyeRadius, 0, Math.PI * 2);
+        context.fill();
+
+        context.fillStyle = '#000000';
+        const pupilOffset = eyeRadius * 0.4;
+        if (this.eyes === 'star') {
+          context.font = `${Math.max(8, eyeRadius * 1.8)}px sans-serif`;
+          context.textAlign = 'center';
+          context.textBaseline = 'middle';
+          context.fillText('⭐', leftEyeX, leftEyeY);
+          context.fillText('⭐', rightEyeX, rightEyeY);
+        } else {
+          context.beginPath();
+          context.arc(leftEyeX + Math.cos(this.angle) * pupilOffset, leftEyeY + Math.sin(this.angle) * pupilOffset, eyeRadius * 0.4, 0, Math.PI * 2);
+          context.arc(rightEyeX + Math.cos(this.angle) * pupilOffset, rightEyeY + Math.sin(this.angle) * pupilOffset, eyeRadius * 0.4, 0, Math.PI * 2);
+          context.fill();
+        }
+
+        this.drawAccessory(context, head.x, head.y);
+
+        context.fillStyle = '#ffffff';
+        context.font = 'bold 11px sans-serif';
+        context.textAlign = 'center';
+        context.fillText(this.name, head.x, head.y - this.radius - 12);
+
+        context.restore();
+      }
+
+      drawAccessory(context, hx, hy) {
+        context.save();
+        context.translate(hx, hy);
+        context.rotate(this.angle);
+
+        if (this.hat === 'crown') {
+          context.fillStyle = '#fbbf24';
+          context.beginPath();
+          context.moveTo(-6, -this.radius);
+          context.lineTo(-10, -this.radius - 12);
+          context.lineTo(0, -this.radius - 14);
+          context.lineTo(10, -this.radius - 12);
+          context.closePath();
+          context.fill();
+        } else if (this.hat === 'hat') {
+          context.fillStyle = '#1e293b';
+          context.fillRect(-10, -this.radius - 4, 20, 4);
+          context.fillRect(-6, -this.radius - 14, 12, 10);
+        } else if (this.hat === 'glasses') {
+          context.fillStyle = '#0f172a';
+          context.fillRect(2, -8, 6, 16);
+        } else if (this.hat === 'halo') {
+          context.strokeStyle = '#fde047';
+          context.lineWidth = 2.5;
+          context.beginPath();
+          context.ellipse(0, -this.radius - 10, 8, 3, 0, 0, Math.PI * 2);
+          context.stroke();
+        }
+        context.restore();
+      }
+    }
+
+    window.onload = function() {
+      canvas = document.getElementById('gameCanvas');
+      ctx = canvas.getContext('2d');
+      minimapCanvas = document.getElementById('minimapCanvas');
+      minimapCtx = minimapCanvas.getContext('2d');
+
+      resizeCanvas();
+      window.addEventListener('resize', resizeCanvas);
+      setupListeners();
+      initCloudMultiplayer();
+    };
+
+    function resizeCanvas() {
+      if (canvas) {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+      }
+    }
+
+    function setupListeners() {
+      window.addEventListener('keydown', (e) => {
+        if (e.code === 'ArrowLeft') { keys.ArrowLeft = true; mouse.active = false; }
+        if (e.code === 'ArrowRight') { keys.ArrowRight = true; mouse.active = false; }
+        if (e.code === 'Space') keys.Space = true;
+      });
+      window.addEventListener('keyup', (e) => {
+        if (e.code === 'ArrowLeft') keys.ArrowLeft = false;
+        if (e.code === 'ArrowRight') keys.ArrowRight = false;
+        if (e.code === 'Space') keys.Space = false;
+      });
+      window.addEventListener('mousemove', (e) => {
+        mouse.x = e.clientX;
+        mouse.y = e.clientY;
+        mouse.active = true;
+      });
+      window.addEventListener('mousedown', () => mouse.isDown = true);
+      window.addEventListener('mouseup', () => mouse.isDown = false);
+
+      const btnBoost = document.getElementById('btnBoost');
+      if (btnBoost) {
+        btnBoost.addEventListener('touchstart', (e) => { e.preventDefault(); keys.Space = true; });
+        btnBoost.addEventListener('touchend', (e) => { e.preventDefault(); keys.Space = false; });
+      }
+    }
+
+    function initCloudMultiplayer() {
+      if (!db) return;
+      try {
+        const q = collection(db, 'artifacts', appId, 'public', 'data', 'players');
+        onSnapshot(q, (snapshot) => {
+          remotePlayersData = {};
+          snapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+            if (currentUser && data.id !== currentUser.uid) {
+              remotePlayersData[data.id] = data;
+            }
+          });
+        }, (error) => {
+          console.warn("Cloud sync error:", error);
+        });
+      } catch(e) {
+        console.warn("Multiplayer sync offline mode");
+      }
+
+      setInterval(async () => {
+        if (gameActive && localPlayer && currentUser && localPlayer.isAlive && db) {
+          try {
+            const playerRef = doc(db, 'artifacts', appId, 'public', 'data', 'players', currentUser.uid);
+            await setDoc(playerRef, {
+              id: currentUser.uid,
+              name: localPlayer.name,
+              x: localPlayer.x,
+              y: localPlayer.y,
+              angle: localPlayer.angle,
+              score: Math.floor(localPlayer.score),
+              segments: localPlayer.segments.slice(0, 40),
+              colorPrimary: localPlayer.colorPrimary,
+              colorSecondary: localPlayer.colorSecondary,
+              pattern: localPlayer.pattern,
+              eyes: localPlayer.eyes,
+              hat: localPlayer.hat,
+              updatedAt: Date.now()
+            });
+          } catch(e) {}
+        }
+      }, 100);
+    }
+
+    window.onStartGame = function() {
+      audioSynth.init();
+
+      const name = document.getElementById('inputName').value || 'Cobra';
+      const colorPrimary = document.getElementById('inputColorPrimary').value;
+      const colorSecondary = document.getElementById('inputColorSecondary').value;
+      const pattern = document.getElementById('selectPattern').value;
+      const eyes = document.getElementById('selectEyes').value;
+      const hat = document.getElementById('selectHat').value;
+
+      localPlayer = new Snake({
+        id: currentUser ? currentUser.uid : 'local',
+        name,
+        x: MAP_SIZE / 2,
+        y: MAP_SIZE / 2,
+        colorPrimary,
+        colorSecondary,
+        pattern,
+        eyes,
+        hat,
+        score: 15,
+        isBot: false
+      });
+
+      snakes = [localPlayer];
+
+      for (let i = 0; i < 5; i++) {
+        snakes.push(new Snake({
+          id: 'bot_' + i,
+          name: `Bot IA ${i + 1}`,
+          x: Math.random() * (MAP_SIZE - 400) + 200,
+          y: Math.random() * (MAP_SIZE - 400) + 200,
+          colorPrimary: '#3b82f6',
+          isBot: true,
+          score: 15
+        }));
+      }
+
+      foods = [];
+      for (let i = 0; i < 300; i++) {
+        foods.push(new Food());
+      }
+
+      document.getElementById('menuModal').classList.add('hidden');
+      document.getElementById('gameOverModal').classList.add('hidden');
+      document.getElementById('gameHUD').classList.remove('hidden');
+      document.getElementById('minimapContainer').classList.remove('hidden');
+
+      gameActive = true;
+      requestAnimationFrame(gameLoop);
+    };
+
+    function triggerGameOver() {
+      if (!gameActive) return;
+      gameActive = false;
+      audioSynth.playDeath();
+
+      document.getElementById('finalScore').textContent = Math.floor(localPlayer.score);
+      document.getElementById('finalLength').textContent = localPlayer.segments.length;
+      document.getElementById('gameOverModal').classList.remove('hidden');
+      document.getElementById('gameHUD').classList.add('hidden');
+      document.getElementById('minimapContainer').classList.add('hidden');
+    }
+
+    window.resetGame = function() {
+      document.getElementById('gameOverModal').classList.add('hidden');
+      document.getElementById('menuModal').classList.remove('hidden');
+    };
+
+    function gameLoop() {
+      if (!gameActive) return;
+
+      if (keys.ArrowLeft) {
+        localPlayer.targetAngle -= 0.08;
+      } else if (keys.ArrowRight) {
+        localPlayer.targetAngle += 0.08;
+      } else if (mouse.active) {
+        const dx = mouse.x - canvas.width / 2;
+        const dy = mouse.y - canvas.height / 2;
+        if (Math.hypot(dx, dy) > 15) {
+          localPlayer.targetAngle = Math.atan2(dy, dx);
+        }
+      }
+
+      let allSnakes = [localPlayer];
+      snakes.forEach(s => {
+        if (s.isBot && s.isAlive) {
+          s.update();
+          allSnakes.push(s);
+        }
+      });
+
+      for (let id in remotePlayersData) {
+        const rData = remotePlayersData[id];
+        if (Date.now() - rData.updatedAt < 5000) {
+          let remoteSnake = snakes.find(s => s.id === id);
+          if (!remoteSnake) {
+            remoteSnake = new Snake({ ...rData, isRemote: true });
+            snakes.push(remoteSnake);
+          } else {
+            remoteSnake.x = rData.x;
+            remoteSnake.y = rData.y;
+            remoteSnake.angle = rData.angle;
+            remoteSnake.score = rData.score;
+            remoteSnake.segments = rData.segments;
+            remoteSnake.name = rData.name;
+          }
+          allSnakes.push(remoteSnake);
+        }
+      }
+
+      localPlayer.update();
+
+      allSnakes.forEach(snake => {
+        if (!snake.isAlive) return;
+        const head = snake.segments[0];
+        if (!head) return;
+
+        for (let i = foods.length - 1; i >= 0; i--) {
+          const f = foods[i];
+          const dist = Math.hypot(head.x - f.x, head.y - f.y);
+          if (dist < snake.radius + f.radius) {
+            snake.score += f.value;
+            if (snake === localPlayer) audioSynth.playEat();
+            foods.splice(i, 1);
+            foods.push(new Food());
+          }
+        }
+      });
+
+      while (foods.length < 300) {
+        foods.push(new Food());
+      }
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      ctx.save();
+      ctx.translate(canvas.width / 2 - localPlayer.x, canvas.height / 2 - localPlayer.y);
+
+      ctx.strokeStyle = '#1e293b';
+      ctx.lineWidth = 1.5;
+      const gridSize = 80;
+      for (let x = 0; x <= MAP_SIZE; x += gridSize) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, MAP_SIZE); ctx.stroke();
+      }
+      for (let y = 0; y <= MAP_SIZE; y += gridSize) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(MAP_SIZE, y); ctx.stroke();
+      }
+
+      ctx.strokeStyle = '#06b6d4';
+      ctx.lineWidth = 8;
+      ctx.strokeRect(0, 0, MAP_SIZE, MAP_SIZE);
+
+      foods.forEach(f => f.draw(ctx));
+
+      allSnakes.sort((a, b) => a.score - b.score);
+      allSnakes.forEach(snake => snake.draw(ctx));
+
+      ctx.restore();
+
+      document.getElementById('hudScore').textContent = Math.floor(localPlayer.score);
+      document.getElementById('hudLength').textContent = localPlayer.segments.length;
+      updateLeaderboard(allSnakes);
+      drawMinimap(allSnakes);
+
+      if (localPlayer.isAlive) {
+        requestAnimationFrame(gameLoop);
+      }
+    }
+
+    function updateLeaderboard(allSnakes) {
+      const listEl = document.getElementById('leaderboardList');
+      if (!listEl) return;
+
+      const sorted = [...allSnakes].filter(s => s.isAlive).sort((a, b) => b.score - a.score).slice(0, 5);
+      let html = '';
+      sorted.forEach((s, idx) => {
+        const isMe = s === localPlayer;
+        html += `<div class="flex justify-between items-center py-0.5 ${isMe ? 'text-emerald-400 font-bold' : 'text-slate-300'}">
+          <span class="truncate max-w-[120px]">${idx + 1}. ${s.name}</span>
+          <span class="font-mono">${Math.floor(s.score)}</span>
+        </div>`;
+      });
+      listEl.innerHTML = html;
+    }
+
+    function drawMinimap(allSnakes) {
+      minimapCtx.clearRect(0, 0, 130, 130);
+      minimapCtx.fillStyle = 'rgba(15, 23, 42, 0.95)';
+      minimapCtx.fillRect(0, 0, 130, 130);
+
+      const scale = 130 / MAP_SIZE;
+      minimapCtx.strokeStyle = '#334155';
+      minimapCtx.lineWidth = 1.5;
+      minimapCtx.strokeRect(0, 0, 130, 130);
+
+      allSnakes.forEach(s => {
+        if (!s.isAlive) return;
+        minimapCtx.fillStyle = (s === localPlayer) ? '#10b981' : '#ef4444';
+        minimapCtx.beginPath();
+        minimapCtx.arc(s.x * scale, s.y * scale, s === localPlayer ? 4 : 2.5, 0, Math.PI * 2);
+        minimapCtx.fill();
+      });
+    }
+  </script>
+</body>
+</html>
